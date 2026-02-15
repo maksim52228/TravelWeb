@@ -71,3 +71,18 @@ export default defineConfig([
   },
 ])
 ```
+
+## Production server
+
+Проект можно запускать как единое приложение:
+
+```bash
+npm run build
+npm run start
+```
+
+- UI отдается из `dist/`;
+- API загрузки изображений: `POST /api/upload`;
+- файлы из админки хранятся локально в `uploads/`.
+
+Подробная инструкция: [DEPLOY.md](./DEPLOY.md).

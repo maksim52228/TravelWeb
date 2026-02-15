@@ -14,7 +14,9 @@ import {
   LayoutDashboard,
   FileText,
   Settings,
-  X
+  X,
+  Upload,
+  Loader2
 } from 'lucide-react';
 import type { Excursion } from '@/types';
 
@@ -27,10 +29,14 @@ const badgeColors = [
 ];
 
 export default function ExcursionsManager() {
+  const apiBaseUrl = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
   const navigate = useNavigate();
   const { excursions, addExcursion, updateExcursion, deleteExcursion } = useData();
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [isUploadingMain, setIsUploadingMain] = useState(false);
+  const [isUploadingGallery, setIsUploadingGallery] = useState(false);
   const [editingExcursion, setEditingExcursion] = useState<Excursion | null>(null);
   const [formData, setFormData] = useState<Partial<Excursion>>({
     name: '',
@@ -157,6 +163,72 @@ export default function ExcursionsManager() {
     setFormData(prev => ({
       ...prev,
       [field]: prev[field]?.filter((_, i) => i !== index)
+    }));
+  };
+
+  const uploadImage = async (file: File) => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error('Не удалось прочитать файл.'));
+      reader.readAsDataURL(file);
+    });
+
+    const response = await fetch(`${apiBaseUrl}/api/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, dataUrl }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error ?? 'Ошибка загрузки изображения.');
+    }
+
+    return payload.url as string;
+  };
+
+  const handleUploadMainImage = async (file?: File) => {
+    if (!file) {
+      return;
+    }
+
+    setUploadError('');
+    setIsUploadingMain(true);
+    try {
+      const uploadedUrl = await uploadImage(file);
+      setFormData((prev) => ({ ...prev, image: uploadedUrl }));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Ошибка загрузки.');
+    } finally {
+      setIsUploadingMain(false);
+    }
+  };
+
+  const handleUploadGalleryImage = async (file?: File) => {
+    if (!file) {
+      return;
+    }
+
+    setUploadError('');
+    setIsUploadingGallery(true);
+    try {
+      const uploadedUrl = await uploadImage(file);
+      setFormData((prev) => ({
+        ...prev,
+        gallery: Array.from(new Set([...(prev.gallery ?? []), uploadedUrl])),
+      }));
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Ошибка загрузки.');
+    } finally {
+      setIsUploadingGallery(false);
+    }
+  };
+
+  const removeGalleryImage = (imageUrl: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      gallery: prev.gallery?.filter((item) => item !== imageUrl) ?? [],
     }));
   };
 
@@ -511,24 +583,72 @@ export default function ExcursionsManager() {
                 {/* Image */}
                 <div>
                   <label className="block text-sm font-medium text-[#1A1A2E] mb-2">
-                    Изображение
+                    Главное изображение
                   </label>
-                  <select
+                  <input
+                    type="text"
                     value={formData.image}
                     onChange={(e) => setFormData(prev => ({ ...prev, image: e.target.value }))}
+                    placeholder="/uploads/2026/01/photo.jpg"
                     className="w-full px-4 py-2 border rounded-lg focus:border-[#0066CC] outline-none"
-                  >
-                    <option value="/hero-beach.jpg">Пляж на закате</option>
-                    <option value="/phi-phi.jpg">Пхи-Пхи</option>
-                    <option value="/james-bond.jpg">Джеймс Бонд</option>
-                    <option value="/similan.jpg">Симиланы</option>
-                    <option value="/elephant.jpg">Слоновья ферма</option>
-                    <option value="/diving.jpg">Дайвинг</option>
-                    <option value="/wedding.jpg">Свадьба</option>
-                    <option value="/yacht.jpg">Яхта</option>
-                    <option value="/vip.jpg">VIP вилла</option>
-                    <option value="/villa.jpg">Вилла</option>
-                  </select>
+                  />
+
+                  <div className="flex items-center gap-3 mt-3">
+                    <label className="inline-flex items-center gap-2 px-4 py-2 border border-[#0066CC] text-[#0066CC] rounded-lg cursor-pointer hover:bg-[#0066CC]/5 transition-colors">
+                      {isUploadingMain ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      <span>{isUploadingMain ? 'Загрузка...' : 'Загрузить файл'}</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        onChange={(e) => {
+                          void handleUploadMainImage(e.target.files?.[0]);
+                          e.currentTarget.value = '';
+                        }}
+                      />
+                    </label>
+                    <span className="text-xs text-[#6B7280]">Файл сохранится на текущем сервере в папке /uploads.</span>
+                  </div>
+
+                  {formData.image && (
+                    <img src={formData.image} alt="Превью" className="mt-3 w-40 h-24 object-cover rounded-lg border" />
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[#1A1A2E] mb-2">
+                    Галерея
+                  </label>
+                  <label className="inline-flex items-center gap-2 px-4 py-2 border border-[#00D4AA] text-[#0E7490] rounded-lg cursor-pointer hover:bg-[#00D4AA]/10 transition-colors">
+                    {isUploadingGallery ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    <span>{isUploadingGallery ? 'Загрузка...' : 'Добавить фото в галерею'}</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="hidden"
+                      onChange={(e) => {
+                        void handleUploadGalleryImage(e.target.files?.[0]);
+                        e.currentTarget.value = '';
+                      }}
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-3">
+                    {formData.gallery?.map((imageUrl) => (
+                      <div key={imageUrl} className="relative rounded-lg overflow-hidden border">
+                        <img src={imageUrl} alt="Галерея" className="w-full h-24 object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeGalleryImage(imageUrl)}
+                          className="absolute top-1 right-1 p-1 rounded-full bg-white/90 text-red-500"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {uploadError && <p className="text-sm text-red-500 mt-2">{uploadError}</p>}
                 </div>
 
                 {/* Description */}
